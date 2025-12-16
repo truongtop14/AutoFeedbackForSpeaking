@@ -33,7 +33,7 @@ def compute_lexical_score(file):
     levels = []
     scores = []
     asr_df = pd.read_csv(file)
-    cefr_dict = load_cefr_dict("/content/oxford_cerf.csv")
+    cefr_dict = load_cefr_dict("../data/oxford_cerf.csv")
 
     for w in asr_df["word"]:
         w_clean = clean_word(w)

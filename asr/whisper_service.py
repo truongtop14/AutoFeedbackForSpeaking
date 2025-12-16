@@ -1,6 +1,5 @@
 import whisper
 import pandas as pd
-import os
 
 model = whisper.load_model("base.en")
 
