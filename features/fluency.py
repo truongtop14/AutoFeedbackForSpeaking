@@ -4,12 +4,8 @@ import numpy as np
 def compute_fluency_metrics(file, pause_threshold=0.25):
     """
     Compute:
-        - Speech Rate
-        - Articulation Rate
-        - Pause Behavior
-        - Run Length
-        - Phonation-Time Ratio
-        - Prosodic Pacing (pitch statistics)
+        - Speech Rate Per Second
+        - Ratio pauses To Duration
     """
 
     df = pd.read_csv(file)
@@ -34,8 +30,6 @@ def compute_fluency_metrics(file, pause_threshold=0.25):
     # Pause Detection
     # -------------------------
     pauses = []
-    run_lengths = []
-    current_run_count = 1
 
     for i in range(1, total_words):
         prev_end = words[i-1]["end"]
@@ -44,12 +38,6 @@ def compute_fluency_metrics(file, pause_threshold=0.25):
 
         if gap >= pause_threshold:
             pauses.append(gap)
-            run_lengths.append(current_run_count)
-            current_run_count = 1
-        else:
-            current_run_count += 1
-
-    run_lengths.append(current_run_count)
 
     total_pause_time = sum(pauses)
 
