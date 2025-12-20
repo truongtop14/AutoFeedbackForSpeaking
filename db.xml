@@ -1,0 +1,78 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="ASR Speaking Assessment - Final Schema">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Transcript -->
+        <mxCell id="2" value="Transcript&#10;(ASR Output / Feature Source)&#10;PK: (submit_id, word_index)&#10;word, prob, start, end"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1"
+          vertex="1" parent="1">
+          <mxGeometry x="500" y="40" width="380" height="160" as="geometry"/>
+        </mxCell>
+
+        <!-- Fluency -->
+        <mxCell id="3" value="Fluency&#10;PK: submit_id&#10;speed_rate&#10;pause_ratio"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366"
+          vertex="1" parent="1">
+          <mxGeometry x="140" y="300" width="260" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- Lexical -->
+        <mxCell id="4" value="Lexical&#10;PK: submit_id&#10;ttr, mtrr&#10;A1, A2, B1, B2, C1"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656"
+          vertex="1" parent="1">
+          <mxGeometry x="500" y="300" width="300" height="160" as="geometry"/>
+        </mxCell>
+
+        <!-- Pronunciation -->
+        <mxCell id="5" value="Pronunciation&#10;PK: submit_id&#10;0–50%&#10;50–70%&#10;70–85%&#10;85–95%&#10;95–100%"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450"
+          vertex="1" parent="1">
+          <mxGeometry x="900" y="300" width="300" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Feedback -->
+        <mxCell id="6" value="Feedback&#10;PK: (user_id, submit_id)&#10;feedback"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1"
+          vertex="1" parent="1">
+          <mxGeometry x="500" y="560" width="380" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- Feature extraction edges (dashed) -->
+        <mxCell id="7" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
+          edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="8" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
+          edge="1" parent="1" source="2" target="4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="9" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
+          edge="1" parent="1" source="2" target="5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Evaluation / Join edges -->
+        <mxCell id="10" style="endArrow=block;html=1;strokeColor=#9673a6"
+          edge="1" parent="1" source="3" target="6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="11" style="endArrow=block;html=1;strokeColor=#9673a6"
+          edge="1" parent="1" source="4" target="6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="12" style="endArrow=block;html=1;strokeColor=#9673a6"
+          edge="1" parent="1" source="5" target="6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

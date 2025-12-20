@@ -46,11 +46,7 @@ def compute_fluency_metrics(file, pause_threshold=0.25):
     # Final result
     return {
         "file": file,
-        "total_duration": total_duration,
-        "total_words": total_words,
         "speech_rate_wps": speech_rate/60,
-        "num_pauses": len(pauses),
-        "duration_pauses": float(total_pause_time),
         "ratio_pauses_to_duration": float(total_pause_time)/total_duration
     }
     
