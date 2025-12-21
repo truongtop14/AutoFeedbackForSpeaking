@@ -1,17 +1,28 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Annotated
 import db.models
 from db.database import SessionLocal, engine
 from sqlalchemy.orm import Session
+from datetime import datetime
+
+
+
 
 app = FastAPI(
     title="Automatic Speech Recognition ASR",
-    description="something",
+    description="ASR pipeline with Whisper",
     version="1.0.0"
 )
 
 db.models.Base.metadata.create_all(bind=engine)
+
+
+class SubmitBase(BaseModel):
+    user_id: int
+    audio_path: str
+    asr_type: str = "whisper"
+
 
 class TranscriptBase(BaseModel):
     transcript_id: int
@@ -21,10 +32,12 @@ class TranscriptBase(BaseModel):
     start: float
     end: float
 
+
 class FluencyBase(BaseModel):
     fluency_id: int
     speed_rate: float
     pause_ratio: float
+
 
 class LexicalBase(BaseModel):
     lexical_id: int
@@ -44,6 +57,7 @@ class PronunciationBase(BaseModel):
     score_70_85: float
     score_85_95: float
     score_95_100: float
+
 
 class FeedbackBase(BaseModel):
     user_id: int
@@ -73,6 +87,8 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 
 
+
+
 @app.get("/transcripts/{submit_id}")
 def get_transcripts_by_submit(
     submit_id: int,
@@ -85,7 +101,12 @@ def get_transcripts_by_submit(
         .all()
     )
 
+    if not transcripts:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+
     return transcripts
+
 
 
 @app.get("/fluency/{submit_id}")
@@ -235,3 +256,59 @@ def create_feedback(feedback: FeedbackBase, db: db_dependency):
     db.refresh(db_feedback)
 
     return db_feedback
+
+
+
+def get_most_fluent_user(db: Session):
+    return (
+        db.query(
+            db.models.Submit.user_id,
+            db.models.Fluency.speed_rate,
+            db.models.Fluency.pause_ratio
+        )
+        .join(db.models.Fluency, db.models.Fluency.submit_id == db.models.Submit.id)
+        .order_by(
+            db.models.Fluency.pause_ratio.asc(),   # ít pause nhất
+            db.models.Fluency.speed_rate.desc()    # nói đều + nhanh
+        )
+        .first()
+    )
+
+
+
+def get_best_lexical_user(db: Session):
+    return (
+        db.query(
+            db.models.Submit.user_id,
+            db.models.Lexical.mttr,
+            db.models.Lexical.B2,
+            db.models.Lexical.C1
+        )
+        .join(db.models.Lexical, db.models.Lexical.submit_id == db.models.Submit.id)
+        .order_by(
+            (db.models.Lexical.B2 + db.models.Lexical.C1).desc(),  # độ khó từ vựng
+            db.models.Lexical.mttr.desc()                           # ổn định lexical
+        )
+        .first()
+    )
+
+
+
+def get_best_pronunciation_user(db: Session):
+    return (
+        db.query(
+            db.models.Submit.user_id,
+            db.models.Pronunciation.score_95_100,
+            db.models.Pronunciation.score_85_95
+        )
+        .join(db.models.Pronunciation, db.models.Pronunciation.submit_id == db.models.Submit.id)
+        .order_by(
+            db.models.Pronunciation.score_95_100.desc(),
+            db.models.Pronunciation.score_85_95.desc()
+        )
+        .first()
+    )
+
+
+
+

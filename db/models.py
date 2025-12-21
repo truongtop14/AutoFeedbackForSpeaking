@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTime
 
 from db.database import Base
 
@@ -7,8 +6,12 @@ from db.database import Base
 class Submit(Base):
     __tablename__ = "submit"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, index=True)
+    asr_type = Column(String(50), index=True)
+    audio_path = Column(String)
+    created_at = Column(DateTime)
+
 
 
 class Transcript(Base):
