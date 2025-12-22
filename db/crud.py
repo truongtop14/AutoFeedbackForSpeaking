@@ -446,7 +446,7 @@ def create_lexical_from_transcript(
 
 
 # --- PRONUNCIATION ENDPOINTS ---
-@app.get(
+@app.post(
     "/submit/{submit_id}/transcript/pronunciation"
 )
 def compute_pronunciation_from_transcript(
@@ -471,7 +471,7 @@ def compute_pronunciation_from_transcript(
             detail="Transcript not found. Run transcript first."
         )
 
-    # 3. Tạo CSV tạm 
+    # 3. Tạo CSV tạm (FORMAT GIỐNG WHISPER)
     tmp_csv = TMP_DIR / f"pron_{submit_id}_{uuid.uuid4().hex}.csv"
 
     df = pd.DataFrame([
@@ -486,7 +486,7 @@ def compute_pronunciation_from_transcript(
 
     df.to_csv(tmp_csv, index=False, encoding="utf-8-sig")
 
-    # 4. Gọi HÀM features.pronunciation.py 
+    # 4. Gọi HÀM features.pronunciation.py (KHÔNG SỬA)
     result = compute_pronunciation(str(tmp_csv))
 
     # 5. Xoá CSV tạm
@@ -504,11 +504,6 @@ def compute_pronunciation_from_transcript(
         }
     }
 
-    if not transcripts:
-        raise HTTPException(
-            status_code=404,
-            detail="Transcript not found. Run transcript first."
-        )
 
 
 # --- FEEDBACK ENDPOINTS ---
@@ -661,7 +656,7 @@ def get_best_lexical_user(db: Session):
     )
 
 
-@app.get("/analysis/best-lexical")
+@app.get("/submit/transcript/best_lexical")
 def best_lexical_user(db: Session = Depends(get_db)):
     result = get_best_lexical_user(db)
 
@@ -682,7 +677,10 @@ def get_best_pronunciation_user(db: Session):
         db.query(
             models.Submit.user_id,
             models.Pronunciation.score_95_100,
-            models.Pronunciation.score_85_95
+            models.Pronunciation.score_85_95,
+            models.Pronunciation.score_70_85,
+            models.Pronunciation.score_50_70,
+            models.Pronunciation.score_0_50,
         )
         .join(
             models.Pronunciation,
@@ -690,13 +688,16 @@ def get_best_pronunciation_user(db: Session):
         )
         .order_by(
             models.Pronunciation.score_95_100.desc(),
-            models.Pronunciation.score_85_95.desc()
+            models.Pronunciation.score_85_95.desc(),
+            models.Pronunciation.score_70_85.desc(),
+            models.Pronunciation.score_50_70.desc(),
+            models.Pronunciation.score_0_50.desc(),
         )
         .first()
     )
 
 
-@app.get("/analysis/best-pronunciation")
+@app.get("/submit/transcript/best_pronunciation")
 def best_pronunciation_user(db: Session = Depends(get_db)):
     result = get_best_pronunciation_user(db)
 
@@ -706,5 +707,8 @@ def best_pronunciation_user(db: Session = Depends(get_db)):
     return {
         "user_id": result.user_id,
         "score_95_100": result.score_95_100,
-        "score_85_95": result.score_85_95
+        "score_85_95": result.score_85_95,
+        "score_70_85": result.score_70_85,
+        "score_50_70": result.score_50_70,
+        "score_0_50": result.score_0_50,
     }
