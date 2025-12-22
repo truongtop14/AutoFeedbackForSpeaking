@@ -18,7 +18,7 @@ class Transcript(Base):
     __tablename__ = "transcript"
 
     id = Column(Integer, primary_key=True)
-    submit_id = Column(Integer, ForeignKey("submit.id"), unique=True, index=True)
+    submit_id = Column(Integer, ForeignKey("submit.id"), index=True)
 
     word_index = Column(Integer)
     word = Column(String)
@@ -32,7 +32,7 @@ class Fluency(Base):
     __tablename__ = "fluency"
 
     id = Column(Integer, primary_key=True)
-    submit_id = Column(Integer, ForeignKey("submit.id"), unique=True, index=True)
+    submit_id = Column(Integer, ForeignKey("submit.id"),  index=True)
 
     speed_rate = Column(Float)
     pause_ratio = Column(Float)
@@ -42,7 +42,7 @@ class Lexical(Base):
     __tablename__ = "lexical"
 
     id = Column(Integer, primary_key=True)
-    submit_id = Column(Integer, ForeignKey("submit.id"), unique=True, index=True)
+    submit_id = Column(Integer, ForeignKey("submit.id"), index=True)
 
     ttr = Column(Float)
     mttr = Column(Float)
@@ -58,7 +58,7 @@ class Pronunciation(Base):
     __tablename__ = "pronunciation"
 
     id = Column(Integer, primary_key=True)
-    submit_id = Column(Integer, ForeignKey("submit.id"), unique=True, index=True)
+    submit_id = Column(Integer, ForeignKey("submit.id"), index=True)
 
     score_0_50 = Column(Float)
     score_50_70 = Column(Float)
@@ -75,5 +75,3 @@ class Feedback(Base):
     submit_id = Column(Integer, ForeignKey("submit.id"), index=True)
 
     feedback = Column(Text)
-
-
