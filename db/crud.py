@@ -176,6 +176,10 @@ def root():
 
 # --- SUBMIT ENDPOINTS ---
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
 DATASET_DIR = Path("D://ASR//10E1")
 
 @app.get("/submit/local-folder")
@@ -267,7 +271,11 @@ def create_transcript_from_submit(
     # 2. Create CSV path (UUID)
     csv_path = TMP_DIR / f"{submit_id}_{uuid.uuid4().hex}.csv"
 
+<<<<<<< HEAD
     # 3. Run Whisper
+=======
+    # 3. Run Whisper (KHÔNG SỬA FILE GỐC)
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
     try:
         transcribe_with_prob(
             model=whisper_model,
@@ -426,14 +434,22 @@ def create_lexical_from_transcript(
     finally:
         csv_path.unlink(missing_ok=True)
 
+<<<<<<< HEAD
     # upsert Lexical theo submit_id
+=======
+    # ✅ upsert Lexical theo submit_id
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
     lexical = db.query(models.Lexical).filter(models.Lexical.submit_id == submit_id).first()
     if lexical is None:
         lexical = models.Lexical(submit_id=submit_id)
         db.add(lexical)
 
     lexical.ttr = float(diversity["TTR"])
+<<<<<<< HEAD
     lexical.mttr = float(diversity["MSTTR"])   # map MSTTR -> mttr
+=======
+    lexical.mttr = float(diversity["MSTTR"])   # ✅ map MSTTR -> mttr
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
     lexical.A1 = float(cefr_scores["A1"])
     lexical.A2 = float(cefr_scores["A2"])
     lexical.B1 = float(cefr_scores["B1"])
@@ -464,6 +480,7 @@ def compute_pronunciation_from_transcript(
     transcripts = db.query(models.Transcript).filter(
         models.Transcript.submit_id == submit_id
     ).order_by(models.Transcript.word_index).all()
+<<<<<<< HEAD
 
     if not transcripts:
         raise HTTPException(
@@ -503,8 +520,16 @@ def compute_pronunciation_from_transcript(
             "95_100": result["95-100%"]
         }
     }
+=======
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
 
+    if not transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found. Run transcript first."
+        )
 
+<<<<<<< HEAD
 
 # --- FEEDBACK ENDPOINTS ---
 @app.get(
@@ -574,6 +599,40 @@ def generate_feedback_from_transcript(
         )
 
     final_feedback = " ".join(feedback_text)
+=======
+    # 3. Tạo CSV tạm (FORMAT GIỐNG WHISPER)
+    tmp_csv = TMP_DIR / f"pron_{submit_id}_{uuid.uuid4().hex}.csv"
+
+    df = pd.DataFrame([
+        {
+            "word": t.word,
+            "probability": t.prob,
+            "start": t.start,
+            "end": t.end
+        }
+        for t in transcripts
+    ])
+
+    df.to_csv(tmp_csv, index=False, encoding="utf-8-sig")
+
+    # 4. Gọi HÀM features.pronunciation.py (KHÔNG SỬA)
+    result = compute_pronunciation(str(tmp_csv))
+
+    # 5. Xoá CSV tạm
+    tmp_csv.unlink(missing_ok=True)
+
+    # 6. Trả thẳng ra Postman
+    return {
+        "submit_id": submit_id,
+        "pronunciation": {
+            "0_50": result["0–50%"],
+            "50_70": result["50–70%"],
+            "70_85": result["70–85%"],
+            "85_95": result["85–95%"],
+            "95_100": result["95-100%"]
+        }
+    }
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
 
 
     # 5. Save feedback (1 feedback / submit)
@@ -584,17 +643,29 @@ def generate_feedback_from_transcript(
         db.delete(old)
         db.commit()
 
+<<<<<<< HEAD
     db_feedback = models.Feedback(
         submit_id=submit_id,
         feedback=final_feedback
+=======
+# --- FEEDBACK ENDPOINTS ---
+@app.post("/feedback/", response_model=FeedbackResponse, status_code=201)
+def create_feedback(feedback: FeedbackCreate,  db: Session = Depends(get_db)):
+    db_feedback = models.Feedback(
+        user_id=feedback.user_id,
+        submit_id=feedback.submit_id,
+        feedback=feedback.feedback
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
     )
-
     db.add(db_feedback)
     db.commit()
     db.refresh(db_feedback)
-
     return db_feedback
 
+@app.get("/feedback/{submit_id}", response_model=List[FeedbackResponse])
+def get_feedback_by_submit(submit_id: int,  db: Session = Depends(get_db)):
+    feedbacks = db.query(models.Feedback).filter(models.Feedback.submit_id == submit_id).all()
+    return feedbacks
 
 
 # --- BEST FLUENCY ---
@@ -618,7 +689,11 @@ def get_best_fluency_user(db: Session):
     )
 
 
+<<<<<<< HEAD
 @app.get("/submit/transcript/best_fluency")
+=======
+@app.get("/submit/{submit_id}/transcript/best_fluency")
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
 def best_fluency_user(db: Session = Depends(get_db)):
     result = get_best_fluency_user(db)
 
@@ -692,6 +767,21 @@ def get_best_pronunciation_user(db: Session):
 @app.get("/analysis/best-pronunciation")
 def best_pronunciation_user(db: Session = Depends(get_db)):
     result = get_best_pronunciation_user(db)
+<<<<<<< HEAD
+=======
+
+    if not result:
+        raise HTTPException(status_code=404, detail="No pronunciation data found")
+
+    return {
+        "user_id": result.user_id,
+        "score_95_100": result.score_95_100,
+        "score_85_95": result.score_85_95
+    }
+
+
+
+>>>>>>> d22d8d3fe37203e99df99fd7ce4fbe49bafb6537
 
     if not result:
         raise HTTPException(status_code=404, detail="No pronunciation data found")

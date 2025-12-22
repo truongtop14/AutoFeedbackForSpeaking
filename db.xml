@@ -1,74 +1,70 @@
 <mxfile host="app.diagrams.net">
-  <diagram name="ASR Speaking Assessment - Final Schema">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10">
+  <diagram name="ERD AutoFeedback">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
-        <!-- Transcript -->
-        <mxCell id="2" value="Transcript&#10;(ASR Output / Feature Source)&#10;PK: (submit_id, word_index)&#10;word, prob, start, end"
-          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1"
+        <!-- submit -->
+        <mxCell id="submit" value="submit&#10;----------------&#10;id (PK)&#10;user_id&#10;asr_type&#10;audio_path&#10;created_at"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;"
           vertex="1" parent="1">
-          <mxGeometry x="500" y="40" width="380" height="160" as="geometry"/>
+          <mxGeometry x="400" y="200" width="220" height="160" as="geometry"/>
         </mxCell>
 
-        <!-- Fluency -->
-        <mxCell id="3" value="Fluency&#10;PK: submit_id&#10;speed_rate&#10;pause_ratio"
-          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366"
+        <!-- transcript -->
+        <mxCell id="transcript" value="transcript&#10;----------------&#10;id (PK)&#10;submit_id (FK)&#10;word_index&#10;word&#10;prob&#10;start&#10;end"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;"
           vertex="1" parent="1">
-          <mxGeometry x="140" y="300" width="260" height="130" as="geometry"/>
+          <mxGeometry x="100" y="50" width="240" height="200" as="geometry"/>
         </mxCell>
 
-        <!-- Lexical -->
-        <mxCell id="4" value="Lexical&#10;PK: submit_id&#10;ttr, mtrr&#10;A1, A2, B1, B2, C1"
-          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656"
+        <!-- fluency -->
+        <mxCell id="fluency" value="fluency&#10;----------------&#10;id (PK)&#10;submit_id (FK)&#10;speed_rate&#10;pause_ratio"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;"
           vertex="1" parent="1">
-          <mxGeometry x="500" y="300" width="300" height="160" as="geometry"/>
+          <mxGeometry x="100" y="300" width="240" height="140" as="geometry"/>
         </mxCell>
 
-        <!-- Pronunciation -->
-        <mxCell id="5" value="Pronunciation&#10;PK: submit_id&#10;0–50%&#10;50–70%&#10;70–85%&#10;85–95%&#10;95–100%"
-          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450"
+        <!-- lexical -->
+        <mxCell id="lexical" value="lexical&#10;----------------&#10;id (PK)&#10;submit_id (FK)&#10;ttr&#10;mttr&#10;A1 A2 B1 B2 C1"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;"
           vertex="1" parent="1">
-          <mxGeometry x="900" y="300" width="300" height="180" as="geometry"/>
+          <mxGeometry x="700" y="50" width="240" height="180" as="geometry"/>
         </mxCell>
 
-        <!-- Feedback -->
-        <mxCell id="6" value="Feedback&#10;PK: (user_id, submit_id)&#10;feedback"
-          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1"
+        <!-- pronunciation -->
+        <mxCell id="pronunciation" value="pronunciation&#10;----------------&#10;id (PK)&#10;submit_id (FK)&#10;score_0_50&#10;score_50_70&#10;score_70_85&#10;score_85_95&#10;score_95_100"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;"
           vertex="1" parent="1">
-          <mxGeometry x="500" y="560" width="380" height="130" as="geometry"/>
+          <mxGeometry x="700" y="280" width="260" height="220" as="geometry"/>
         </mxCell>
 
-        <!-- Feature extraction edges (dashed) -->
-        <mxCell id="7" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
-          edge="1" parent="1" source="2" target="3">
+        <!-- feedback -->
+        <mxCell id="feedback" value="feedback&#10;----------------&#10;id (PK)&#10;submit_id (FK)&#10;feedback"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;"
+          vertex="1" parent="1">
+          <mxGeometry x="400" y="450" width="220" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- edges -->
+        <mxCell id="e1" style="endArrow=block;" edge="1" parent="1" source="transcript" target="submit">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="8" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
-          edge="1" parent="1" source="2" target="4">
+        <mxCell id="e2" style="endArrow=block;" edge="1" parent="1" source="fluency" target="submit">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="9" style="dashed=1;endArrow=block;html=1;strokeColor=#6c8ebf"
-          edge="1" parent="1" source="2" target="5">
+        <mxCell id="e3" style="endArrow=block;" edge="1" parent="1" source="lexical" target="submit">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <!-- Evaluation / Join edges -->
-        <mxCell id="10" style="endArrow=block;html=1;strokeColor=#9673a6"
-          edge="1" parent="1" source="3" target="6">
+        <mxCell id="e4" style="endArrow=block;" edge="1" parent="1" source="pronunciation" target="submit">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="11" style="endArrow=block;html=1;strokeColor=#9673a6"
-          edge="1" parent="1" source="4" target="6">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="12" style="endArrow=block;html=1;strokeColor=#9673a6"
-          edge="1" parent="1" source="5" target="6">
+        <mxCell id="e5" style="endArrow=block;" edge="1" parent="1" source="feedback" target="submit">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
