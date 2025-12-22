@@ -1,0 +1,82 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Data Flow Auto Feedback">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- submit -->
+        <mxCell id="submit" value="Submit&#10;(Audio + Metadata)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;"
+          vertex="1" parent="1">
+          <mxGeometry x="450" y="40" width="260" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- transcript -->
+        <mxCell id="transcript" value="Transcript&#10;(Word, Prob, Time)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;"
+          vertex="1" parent="1">
+          <mxGeometry x="450" y="160" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- fluency -->
+        <mxCell id="fluency" value="Fluency Analysis&#10;(Speed, Pause)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;"
+          vertex="1" parent="1">
+          <mxGeometry x="100" y="320" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- lexical -->
+        <mxCell id="lexical" value="Lexical Analysis&#10;(TTR, MTTR, CEFR)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;"
+          vertex="1" parent="1">
+          <mxGeometry x="450" y="320" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- pronunciation -->
+        <mxCell id="pronunciation" value="Pronunciation Analysis&#10;(Confidence Scores)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;"
+          vertex="1" parent="1">
+          <mxGeometry x="800" y="320" width="300" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- feedback -->
+        <mxCell id="feedback" value="Feedback Generator&#10;(Final Text Feedback)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeWidth=2;"
+          vertex="1" parent="1">
+          <mxGeometry x="450" y="500" width="300" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- edges -->
+        <mxCell id="e1" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="submit" target="transcript">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e2" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="transcript" target="fluency">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e3" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="transcript" target="lexical">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e4" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="transcript" target="pronunciation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e5" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="fluency" target="feedback">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e6" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="lexical" target="feedback">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e7" style="endArrow=block;strokeWidth=2;" edge="1" parent="1" source="pronunciation" target="feedback">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
