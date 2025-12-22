@@ -618,7 +618,7 @@ def get_best_fluency_user(db: Session):
     )
 
 
-@app.get("/submit/{submit_id}/transcript/best_fluency")
+@app.get("/submit/transcript/best_fluency")
 def best_fluency_user(db: Session = Depends(get_db)):
     result = get_best_fluency_user(db)
 
