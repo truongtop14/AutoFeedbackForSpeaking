@@ -12,8 +12,10 @@ from features.pronunciation import compute_pronunciation
 from features.fluency import compute_fluency_metrics
 from features.lexical_cefr import compute_lexical_score
 from features.lexical_diversity import compute_lexical_diversity_metrics
+from sqlalchemy import func
+from typing import Optional
 
-import uuid
+
 import pandas as pd
 
 import os
@@ -30,32 +32,21 @@ models.Base.metadata.create_all(bind=engine)
 
 
 # --- SUBMIT MODELS ---
-class SubmitCreate(BaseModel):
-    """Input model for creating submission"""
-    user_id: int
-    audio_path: str
-    asr_type: str = "whisper"
 
 class SubmitResponse(BaseModel):
     """ Response model with ALL fields from database"""
     id: int
     user_id: int
     audio_path: str
-    asr_type: str
+    asr_type: str = "whisper"
     created_at: datetime
+    user_submit_index: int
     
     class Config:
         orm_mode = True  # Pydantic v1
         # from_attributes = True  # Pydantic v2
 
 # --- TRANSCRIPT MODELS ---
-class TranscriptCreate(BaseModel):
-    submit_id: int
-    word_index: int
-    word: str
-    prob: float
-    start: float
-    end: float
 
 class TranscriptResponse(BaseModel):
     id: int
@@ -70,11 +61,6 @@ class TranscriptResponse(BaseModel):
         orm_mode = True
 
 # --- FLUENCY MODELS ---
-class FluencyCreate(BaseModel):
-    submit_id: int
-    speed_rate: float
-    pause_ratio: float
-
 class FluencyResponse(BaseModel):
     id: int
     submit_id: int
@@ -85,15 +71,6 @@ class FluencyResponse(BaseModel):
         orm_mode = True
 
 # --- LEXICAL MODELS ---
-class LexicalCreate(BaseModel):
-    submit_id: int
-    ttr: float
-    mttr: float
-    A1: float
-    A2: float
-    B1: float
-    B2: float
-    C1: float
 
 class LexicalResponse(BaseModel):
     id: int
@@ -110,14 +87,6 @@ class LexicalResponse(BaseModel):
         orm_mode = True
 
 # --- PRONUNCIATION MODELS ---
-class PronunciationCreate(BaseModel):
-    submit_id: int
-    score_0_50: float
-    score_50_70: float
-    score_70_85: float
-    score_85_95: float
-    score_95_100: float
-
 class PronunciationResponse(BaseModel):
     id: int
     submit_id: int
@@ -178,7 +147,7 @@ def root():
 
 DATASET_DIR = Path("D://ASR//10E1")
 
-@app.get("/submit/local-folder")
+@app.post("/submit/local-folder")
 def create_submit_from_local_folder(
     db: Session = Depends(get_db)
 ):
@@ -190,7 +159,11 @@ def create_submit_from_local_folder(
             detail=f"Dataset folder not found: {folder}"
         )
 
-    audio_files = list(folder.glob("*.wav")) + list(folder.glob("*.mp3")) + list(folder.glob("*.m4a"))
+    audio_files = (
+        list(folder.glob("*.wav"))
+        + list(folder.glob("*.mp3"))
+        + list(folder.glob("*.m4a"))
+    )
 
     if not audio_files:
         raise HTTPException(
@@ -204,12 +177,18 @@ def create_submit_from_local_folder(
         filename = audio_file.name
 
         try:
-            # extract user_id từ filename
             user_id = extract_user_id(filename)
 
-            # tạo submit
+            # submit thứ mấy của user (KHÔNG động vào submit.id)
+            user_submit_index = (
+                db.query(func.count(models.Submit.id))
+                .filter(models.Submit.user_id == user_id)
+                .scalar()
+            ) + 1
+
             submit = models.Submit(
                 user_id=user_id,
+                user_submit_index=user_submit_index,
                 audio_path=str(audio_file),
                 asr_type="whisper",
                 created_at=datetime.now(timezone.utc)
@@ -221,12 +200,15 @@ def create_submit_from_local_folder(
 
             results.append({
                 "file": filename,
-                "submit_id": submit.id,
+                "submit_id": submit.id,                     # PK
                 "user_id": user_id,
+                "user_submit_index": user_submit_index,     # submit thứ mấy của user
+                "display_id": f"{user_id}.{user_submit_index}",
                 "status": "created"
             })
 
-        except ValueError as e:
+        except Exception as e:
+            db.rollback()
             results.append({
                 "file": filename,
                 "error": str(e),
@@ -234,77 +216,119 @@ def create_submit_from_local_folder(
             })
 
     return {
-        "dataset_path": str(folder),
         "total_files": len(audio_files),
         "created": len([r for r in results if r["status"] == "created"]),
         "results": results
     }
 
 
-
-# --- TRANSCRIPT ENDPOINTS ---
-    
-TMP_DIR = Path("tmp_transcripts")
-TMP_DIR.mkdir(exist_ok=True)
-
-@app.get("/submit/{submit_id}/transcript", response_model=List[TranscriptResponse])
-def create_transcript_from_submit(
-    submit_id: int,
+@app.get("/submit")
+def get_all_submits(
+    user_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    # 1. Get submit
-    submit = db.query(models.Submit).filter(models.Submit.id == submit_id).first()
-    if not submit:
-        raise HTTPException(status_code=404, detail="Submit not found")
+    query = db.query(models.Submit)
 
-    audio_path = Path(submit.audio_path).resolve()
+    if user_id is not None:
+        query = query.filter(models.Submit.user_id == user_id)
+
+    submits = query.order_by(models.Submit.created_at.asc()).all()
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found"
+        )
+
+    return {
+        "total_submits": len(submits),
+        "submits": [
+            {
+                "submit_id": s.id,
+                "user_id": s.user_id,
+                "user_submit_index": s.user_submit_index,
+                "display_id": f"{s.user_id}.{s.user_submit_index}",
+                "audio_path": s.audio_path,
+                "asr_type": s.asr_type,
+                "created_at": s.created_at
+            }
+            for s in submits
+        ]
+    }
+
+
+
+# --- TRANSCRIPT ENDPOINTS ---
+@app.post(
+    "/user/{user_id}/submit/{user_submit_index}/transcript",
+    response_model=list[TranscriptResponse]
+)
+def create_transcript_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    # Map display_id → submit (PK)
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    submit_id = submit.id  # PK thật sự
+
+    audio_path = Path(submit.audio_path)
     if not audio_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"Audio file not found: {audio_path}"
         )
 
-    # 2. Create CSV path (UUID)
-    csv_path = TMP_DIR / f"{submit_id}_{uuid.uuid4().hex}.csv"
-
-    # 3. Run Whisper (KHÔNG SỬA FILE GỐC)
+    # Whisper → DataFrame
     try:
-        transcribe_with_prob(
+        df = transcribe_with_prob(
             model=whisper_model,
-            file_in=str(audio_path),
-            file_out=str(csv_path)
+            file_in=str(audio_path)
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ASR failed: {e}")
-
-    # 4. Read CSV
-    if not csv_path.exists():
-        raise HTTPException(status_code=500, detail="Whisper did not produce CSV")
-
-    df = pd.read_csv(csv_path)
-
-    # 5. Cleanup CSV
-    csv_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"ASR failed: {e}"
+        )
 
     if df.empty:
-        raise HTTPException(status_code=500, detail="No words extracted")
+        raise HTTPException(
+            status_code=500,
+            detail="No words extracted"
+        )
 
-    # 6. Clear old transcripts
+    # Clean dataframe
+    df = df.dropna(subset=["word", "start", "end"])
+    df["word"] = df["word"].astype(str).str.strip()
+    df = df[df["word"] != ""]
+    df = df.sort_values(["start", "end"]).reset_index(drop=True)
+
+    # Xoá transcript cũ
     db.query(models.Transcript).filter(
         models.Transcript.submit_id == submit_id
     ).delete()
     db.commit()
 
-    # 7. Save transcripts
+    # Ghi transcript mới
     transcripts = []
-    for idx, row in df.iterrows():
+    for word_index, row in enumerate(df.itertuples(index=False)):
         t = models.Transcript(
             submit_id=submit_id,
-            word_index=idx,
-            word=row["word"],
-            prob=row["probability"],
-            start=row["start"],
-            end=row["end"]
+            word_index=word_index,
+            word=row.word,
+            prob=float(row.probability),
+            start=float(row.start),
+            end=float(row.end),
         )
         db.add(t)
         transcripts.append(t)
@@ -316,68 +340,204 @@ def create_transcript_from_submit(
     return transcripts
 
 
-
-# --- FLUENCY ENDPOINTS ---
-@app.get(
-    "/submit/{submit_id}/transcript/fluency",
-    response_model=FluencyResponse,
-    status_code=201
+@app.post(
+    "/transcript/all",
+    response_model=dict[int, dict[int, list[TranscriptResponse]]]
 )
-def create_fluency_from_transcript(
-    submit_id: int,
+def create_transcripts_for_all_users(
     db: Session = Depends(get_db)
 ):
-    # 1. Check submit
-    submit = db.query(models.Submit).filter(
-        models.Submit.id == submit_id
-    ).first()
-    if not submit:
-        raise HTTPException(status_code=404, detail="Submit not found")
+    # Lấy tất cả submit của tất cả user
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
 
-    # 2. Check transcript
-    transcripts = db.query(models.Transcript).filter(
-        models.Transcript.submit_id == submit_id
-    ).order_by(models.Transcript.word_index).all()
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found in database"
+        )
+
+    results: dict[int, dict[int, list[TranscriptResponse]]] = {}
+
+    # Loop từng submit
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+
+        # Init dict cho user
+        if user_id not in results:
+            results[user_id] = {}
+
+        audio_path = Path(submit.audio_path)
+
+        try:
+            # --- check audio ---
+            if not audio_path.exists():
+                raise FileNotFoundError(
+                    f"Audio not found: {audio_path}"
+                )
+
+            # Whisper → DataFrame
+            df = transcribe_with_prob(
+                model=whisper_model,
+                file_in=str(audio_path)
+            )
+
+            if df.empty:
+                raise ValueError("No words extracted")
+
+            # Clean dataframe
+            df = df.dropna(subset=["word", "start", "end"])
+            df["word"] = df["word"].astype(str).str.strip()
+            df = df[df["word"] != ""]
+            df = df.sort_values(["start", "end"]).reset_index(drop=True)
+
+            # Xoá transcript cũ
+            db.query(models.Transcript).filter(
+                models.Transcript.submit_id == submit.id
+            ).delete()
+            db.commit()
+
+            # Ghi transcript mới
+            transcripts = []
+            for word_index, row in enumerate(df.itertuples(index=False)):
+                t = models.Transcript(
+                    submit_id=submit.id,
+                    word_index=word_index,
+                    word=row.word,
+                    prob=float(row.probability),
+                    start=float(row.start),
+                    end=float(row.end),
+                )
+                db.add(t)
+                transcripts.append(t)
+
+            db.commit()
+            for t in transcripts:
+                db.refresh(t)
+
+            results[user_id][submit_index] = transcripts
+
+        except Exception as e:
+            # submit lỗi không làm sập batch
+            print(
+                f"[ERROR] user={user_id} "
+                f"submit={submit_index} → {e}"
+            )
+            results[user_id][submit_index] = []
+
+    return results
+
+
+
+@app.get(
+    "/user/{user_id}/submit/{user_submit_index}/transcript",
+    response_model=list[TranscriptResponse]
+)
+def get_transcript_by_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    # Lấy transcript
+    transcripts = (
+        db.query(models.Transcript)
+        .filter(models.Transcript.submit_id == submit.id)
+        .order_by(models.Transcript.word_index)
+        .all()
+    )
 
     if not transcripts:
         raise HTTPException(
             status_code=404,
-            detail="Transcript not found. Run transcript first."
+            detail="Transcript not found"
         )
 
-    # 3. Xoá fluency cũ (nếu POST lại)
-    db.query(models.Fluency).filter(
-        models.Fluency.submit_id == submit_id
-    ).delete()
-    db.commit()
+    return transcripts
 
-    # 4. Tạo CSV tạm
-    tmp_csv = TMP_DIR / f"flu_{submit_id}_{uuid.uuid4().hex}.csv"
 
+
+
+# --- FLUENCY ENDPOINTS ---
+@app.post(
+    "/user/{user_id}/submit/{user_submit_index}/fluency",
+    response_model=FluencyResponse,
+    status_code=201
+)
+def create_fluency_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(status_code=404, detail="Submit not found")
+
+    submit_id = submit.id
+
+    # Lấy transcript
+    transcripts = (
+        db.query(models.Transcript)
+        .filter(models.Transcript.submit_id == submit_id)
+        .order_by(models.Transcript.word_index)
+        .all()
+    )
+
+    if not transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found. Run transcript endpoint first."
+        )
+
+    # Transcript → DataFrame
     df = pd.DataFrame([
         {
             "word": t.word,
             "start": t.start,
-            "end": t.end
+            "end": t.end,
+            "probability": t.prob
         }
         for t in transcripts
     ])
 
-    df.to_csv(tmp_csv, index=False, encoding="utf-8-sig")
-
-    # 5. Compute fluency
+    # Compute fluency
     try:
-        result = compute_fluency_metrics(str(tmp_csv))
+        result = compute_fluency_metrics(df)
     except Exception as e:
-        tmp_csv.unlink(missing_ok=True)
         raise HTTPException(
             status_code=500,
             detail=f"Fluency computation failed: {e}"
         )
 
-    tmp_csv.unlink(missing_ok=True)
+    # Upsert
+    db.query(models.Fluency).filter(
+        models.Fluency.submit_id == submit_id
+    ).delete()
+    db.commit()
 
-    # 6. Lưu DB
     fluency = models.Fluency(
         submit_id=submit_id,
         speed_rate=result["speech_rate_wps"],
@@ -391,89 +551,90 @@ def create_fluency_from_transcript(
     return fluency
 
 
-# --- LEXICAL ENDPOINTS ---
+
 @app.get(
-    "/submit/{submit_id}/transcript/lexical",
-    response_model=LexicalResponse
+    "/user/{user_id}/submit/{user_submit_index}/fluency",
+    response_model=FluencyResponse
 )
-def create_lexical_from_transcript(
-    submit_id: int,
+def get_fluency_from_display_id(
+    user_id: int,
+    user_submit_index: int,
     db: Session = Depends(get_db)
 ):
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    # Lấy fluency
+    fluency = (
+        db.query(models.Fluency)
+        .filter(models.Fluency.submit_id == submit.id)
+        .first()
+    )
+
+    if not fluency:
+        raise HTTPException(
+            status_code=404,
+            detail="Fluency not found. Run fluency POST first."
+        )
+
+    return fluency
+
+
+
+# --- LEXICAL ENDPOINTS ---
+
+@app.post(
+    "/user/{user_id}/submit/{user_submit_index}/lexical",
+    response_model=LexicalResponse,
+    status_code=201
+)
+def create_lexical_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Transcript → Lexical (CEFR + Diversity) → DB → Return
+    """
+
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    submit_id = submit.id
+
+    # Lấy transcript
     transcripts = (
         db.query(models.Transcript)
         .filter(models.Transcript.submit_id == submit_id)
         .order_by(models.Transcript.word_index)
         .all()
     )
-    if not transcripts:
-        raise HTTPException(status_code=404, detail="Transcript not found. Run transcript first.")
-
-    csv_path = TMP_DIR / f"lexical_{submit_id}_{uuid.uuid4().hex}.csv"
-    df = pd.DataFrame([{
-        "word": t.word,
-        "probability": t.prob,
-        "start": t.start,
-        "end": t.end
-    } for t in transcripts])
-    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-
-    try:
-        cefr_scores = compute_lexical_score(str(csv_path))
-        diversity = compute_lexical_diversity_metrics(str(csv_path))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lexical computation failed: {e}")
-    finally:
-        csv_path.unlink(missing_ok=True)
-
-    # upsert Lexical theo submit_id
-    lexical = db.query(models.Lexical).filter(models.Lexical.submit_id == submit_id).first()
-    if lexical is None:
-        lexical = models.Lexical(submit_id=submit_id)
-        db.add(lexical)
-
-    lexical.ttr = float(diversity["TTR"])
-    lexical.mttr = float(diversity["MSTTR"])   # map MSTTR -> mttr
-    lexical.A1 = float(cefr_scores["A1"])
-    lexical.A2 = float(cefr_scores["A2"])
-    lexical.B1 = float(cefr_scores["B1"])
-    lexical.B2 = float(cefr_scores["B2"])
-    lexical.C1 = float(cefr_scores["C1"])
-
-    db.commit()
-    db.refresh(lexical)
-    return lexical
-
-
-# --- PRONUNCIATION ENDPOINTS ---
-@app.post(
-    "/submit/{submit_id}/transcript/pronunciation"
-)
-def compute_pronunciation_from_transcript(
-    submit_id: int,
-    db: Session = Depends(get_db)
-):
-    # 1. Kiểm tra submit
-    submit = db.query(models.Submit).filter(
-        models.Submit.id == submit_id
-    ).first()
-    if not submit:
-        raise HTTPException(status_code=404, detail="Submit not found")
-
-    # 2. Lấy transcript
-    transcripts = db.query(models.Transcript).filter(
-        models.Transcript.submit_id == submit_id
-    ).order_by(models.Transcript.word_index).all()
 
     if not transcripts:
         raise HTTPException(
             status_code=404,
-            detail="Transcript not found. Run transcript first."
+            detail="Transcript not found. Run transcript endpoint first."
         )
 
-    # 3. Tạo CSV tạm (FORMAT GIỐNG WHISPER)
-    tmp_csv = TMP_DIR / f"pron_{submit_id}_{uuid.uuid4().hex}.csv"
-
+    # Transcript → DataFrame
     df = pd.DataFrame([
         {
             "word": t.word,
@@ -484,25 +645,207 @@ def compute_pronunciation_from_transcript(
         for t in transcripts
     ])
 
-    df.to_csv(tmp_csv, index=False, encoding="utf-8-sig")
+    # Compute lexical (CEFR + diversity)
+    try:
+        cefr_scores = compute_lexical_score(df)
+        diversity = compute_lexical_diversity_metrics(df)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Lexical computation failed: {e}"
+        )
 
-    # 4. Gọi HÀM features.pronunciation.py (KHÔNG SỬA)
-    result = compute_pronunciation(str(tmp_csv))
+    # Upsert lexical
+    lexical = (
+        db.query(models.Lexical)
+        .filter(models.Lexical.submit_id == submit_id)
+        .first()
+    )
 
-    # 5. Xoá CSV tạm
-    tmp_csv.unlink(missing_ok=True)
+    if lexical is None:
+        lexical = models.Lexical(submit_id=submit_id)
+        db.add(lexical)
 
-    # 6. Trả thẳng ra Postman
-    return {
-        "submit_id": submit_id,
-        "pronunciation": {
-            "0_50": result["0–50%"],
-            "50_70": result["50–70%"],
-            "70_85": result["70–85%"],
-            "85_95": result["85–95%"],
-            "95_100": result["95-100%"]
+    lexical.ttr = float(diversity["TTR"])
+    lexical.mttr = float(diversity["MSTTR"])
+    lexical.A1 = float(cefr_scores["A1"])
+    lexical.A2 = float(cefr_scores["A2"])
+    lexical.B1 = float(cefr_scores["B1"])
+    lexical.B2 = float(cefr_scores["B2"])
+    lexical.C1 = float(cefr_scores["C1"])
+
+    db.commit()
+    db.refresh(lexical)
+
+    return lexical
+
+
+@app.get(
+    "/user/{user_id}/submit/{user_submit_index}/lexical",
+    response_model=LexicalResponse
+)
+def get_lexical_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get lexical score for a specific submit (display id)
+    """
+
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    # Get lexical
+    lexical = (
+        db.query(models.Lexical)
+        .filter(models.Lexical.submit_id == submit.id)
+        .first()
+    )
+
+    if not lexical:
+        raise HTTPException(
+            status_code=404,
+            detail="Lexical not found. Run lexical POST first."
+        )
+
+    return lexical
+
+
+
+
+# --- PRONUNCIATION ENDPOINTS ---
+@app.post(
+    "/user/{user_id}/submit/{user_submit_index}/pronunciation",
+    status_code=201
+)
+def create_pronunciation_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Transcript → Pronunciation → DB → Return
+    """
+
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    submit_id = submit.id
+
+    # Lấy transcript
+    transcripts = (
+        db.query(models.Transcript)
+        .filter(models.Transcript.submit_id == submit_id)
+        .order_by(models.Transcript.word_index)
+        .all()
+    )
+
+    if not transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found. Run transcript endpoint first."
+        )
+
+    # Transcript → DataFrame
+    df = pd.DataFrame([
+        {
+            "word": t.word,
+            "probability": t.prob,
+            "start": t.start,
+            "end": t.end
         }
-    }
+        for t in transcripts
+    ])
+
+    # Compute pronunciation
+    try:
+        result = compute_pronunciation(df)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pronunciation computation failed: {e}"
+        )
+
+    # Upsert pronunciation
+    pronunciation = (
+        db.query(models.Pronunciation)
+        .filter(models.Pronunciation.submit_id == submit_id)
+        .first()
+    )
+
+    if pronunciation is None:
+        pronunciation = models.Pronunciation(submit_id=submit_id)
+        db.add(pronunciation)
+
+    pronunciation.score_0_50 = result["0–50%"]
+    pronunciation.score_50_70 = result["50–70%"]
+    pronunciation.score_70_85 = result["70–85%"]
+    pronunciation.score_85_95 = result["85–95%"]
+    pronunciation.score_95_100 = result["95–100%"]
+
+    db.commit()
+    db.refresh(pronunciation)
+
+    return pronunciation
+
+
+@app.get(
+    "/user/{user_id}/submit/{user_submit_index}/pronunciation"
+)
+def get_pronunciation_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get pronunciation score for a specific submit (display id)
+    """
+
+    # Map display_id → submit
+    submit = db.query(models.Submit).filter(
+        models.Submit.user_id == user_id,
+        models.Submit.user_submit_index == user_submit_index
+    ).first()
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    # Get pronunciation
+    pronunciation = (
+        db.query(models.Pronunciation)
+        .filter(models.Pronunciation.submit_id == submit.id)
+        .first()
+    )
+
+    if not pronunciation:
+        raise HTTPException(
+            status_code=404,
+            detail="Pronunciation not found. Run pronunciation POST first."
+        )
+
+    return pronunciation
 
 
 
@@ -534,9 +877,9 @@ def generate_feedback_from_transcript(
         )
 
     # 3. Compute features (reuse your GET logic internally)
-    fluency = create_fluency_from_transcript(submit_id, db)
-    lexical = create_lexical_from_transcript(submit_id, db)
-    pronunciation = compute_pronunciation_from_transcript(submit_id, db)
+    fluency = create_fluency_from_display_id(submit_id, db)
+    lexical = create_lexical_from_display_id(submit_id, db)
+    pronunciation = create_pronunciation_from_display_id(submit_id, db)
 
     # 4. Generate feedback text
     feedback_text = []
@@ -593,10 +936,27 @@ def generate_feedback_from_transcript(
     db.refresh(db_feedback)
     return db_feedback
 
-@app.get("/feedback/{submit_id}", response_model=List[FeedbackResponse])
-def get_feedback_by_submit(submit_id: int,  db: Session = Depends(get_db)):
-    feedbacks = db.query(models.Feedback).filter(models.Feedback.submit_id == submit_id).all()
-    return feedbacks
+@app.get(
+    "/submit/{submit_id}/transcript/feedback",
+    response_model=FeedbackResponse
+)
+def get_feedback_from_transcript(
+    submit_id: int,
+    db: Session = Depends(get_db)
+):
+    feedback = db.query(models.Feedback).filter(
+        models.Feedback.submit_id == submit_id
+    ).first()
+
+    if not feedback:
+        raise HTTPException(
+            status_code=404,
+            detail="Feedback not found. Generate feedback first."
+        )
+
+    return feedback
+
+
 
 
 # --- BEST FLUENCY ---
@@ -677,21 +1037,13 @@ def get_best_pronunciation_user(db: Session):
         db.query(
             models.Submit.user_id,
             models.Pronunciation.score_95_100,
-            models.Pronunciation.score_85_95,
-            models.Pronunciation.score_70_85,
-            models.Pronunciation.score_50_70,
-            models.Pronunciation.score_0_50,
         )
         .join(
             models.Pronunciation,
             models.Pronunciation.submit_id == models.Submit.id
         )
         .order_by(
-            models.Pronunciation.score_95_100.desc(),
-            models.Pronunciation.score_85_95.desc(),
-            models.Pronunciation.score_70_85.desc(),
-            models.Pronunciation.score_50_70.desc(),
-            models.Pronunciation.score_0_50.desc(),
+            models.Pronunciation.score_95_100.desc()
         )
         .first()
     )
@@ -707,8 +1059,4 @@ def best_pronunciation_user(db: Session = Depends(get_db)):
     return {
         "user_id": result.user_id,
         "score_95_100": result.score_95_100,
-        "score_85_95": result.score_85_95,
-        "score_70_85": result.score_70_85,
-        "score_50_70": result.score_50_70,
-        "score_0_50": result.score_0_50,
     }
