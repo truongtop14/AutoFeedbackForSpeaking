@@ -103,7 +103,6 @@ class PronunciationResponse(BaseModel):
 class FeedbackResponse(BaseModel):
     id: int
     submit_id: int
-    user_id: int
     feedback: str
     
     class Config:
@@ -670,6 +669,51 @@ def get_fluency_from_display_id(
     return fluency
 
 
+@app.get(
+    "/fluency/all",
+    response_model=dict[int, dict[int, FluencyResponse | None]]
+)
+def get_fluency_all(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found"
+        )
+
+    results: dict[int, dict[int, FluencyResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+
+        results.setdefault(user_id, {})
+
+        fluency = (
+            db.query(models.Fluency)
+            .filter(models.Fluency.submit_id == submit.id)
+            .first()
+        )
+
+        results[user_id][submit_index] = (
+            FluencyResponse.from_orm(fluency)
+            if fluency
+            else None
+        )
+
+    return results
+
+
 
 # --- LEXICAL ENDPOINTS ---
 
@@ -880,6 +924,51 @@ def get_lexical_from_display_id(
 
 
 
+@app.get(
+    "/lexical/all",
+    response_model=dict[int, dict[int, LexicalResponse | None]]
+)
+def get_lexical_all(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found"
+        )
+
+    results: dict[int, dict[int, LexicalResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+
+        results.setdefault(user_id, {})
+
+        lexical = (
+            db.query(models.Lexical)
+            .filter(models.Lexical.submit_id == submit.id)
+            .first()
+        )
+
+        # Có thì trả lexical, không có thì None
+        results[user_id][submit_index] = (
+            LexicalResponse.from_orm(lexical)
+            if lexical
+            else None
+        )
+
+    return results
+
 
 # --- PRONUNCIATION ENDPOINTS ---
 @app.post(
@@ -1060,6 +1149,50 @@ def create_pronunciation_for_all_users(
     return results
 
 
+@app.get(
+    "/pronunciation/all",
+    response_model=dict[int, dict[int, PronunciationResponse | None]]
+)
+def get_pronunciation_all(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found"
+        )
+
+    results: dict[int, dict[int, PronunciationResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+
+        results.setdefault(user_id, {})
+
+        pronunciation = (
+            db.query(models.Pronunciation)
+            .filter(models.Pronunciation.submit_id == submit.id)
+            .first()
+        )
+
+        # Có thì trả ORM → Pydantic, không có thì None
+        results[user_id][submit_index] = (
+            PronunciationResponse.from_orm(pronunciation)
+            if pronunciation
+            else None
+        )
+
+    return results
 
 
 @app.get(
@@ -1104,91 +1237,86 @@ def get_pronunciation_from_display_id(
 
 
 # --- FEEDBACK ENDPOINTS ---
-@app.get(
-    "/submit/{submit_id}/transcript/feedback",
+@app.post(
+    "/user/{user_id}/submit/{user_submit_index}/feedback",
     response_model=FeedbackResponse,
     status_code=201
 )
-def generate_feedback_from_transcript(
-    submit_id: int,
+def create_feedback_from_display_id(
+    user_id: int,
+    user_submit_index: int,
     db: Session = Depends(get_db)
 ):
-    # 1. Check submit
-    submit = db.query(models.Submit).filter(
-        models.Submit.id == submit_id
-    ).first()
-    if not submit:
-        raise HTTPException(status_code=404, detail="Submit not found")
+    # 1️⃣ Map display_id → submit
+    submit = (
+        db.query(models.Submit)
+        .filter(
+            models.Submit.user_id == user_id,
+            models.Submit.user_submit_index == user_submit_index
+        )
+        .first()
+    )
 
-    # 2. Ensure transcript exists
-    has_transcript = db.query(models.Transcript).filter(
-        models.Transcript.submit_id == submit_id
-    ).first()
-    if not has_transcript:
+    if not submit:
+        raise HTTPException(404, "Submit not found")
+
+    submit_id = submit.id
+
+    # 2️⃣ Load prerequisite scores
+    fluency = db.query(models.Fluency).filter_by(submit_id=submit_id).first()
+    lexical = db.query(models.Lexical).filter_by(submit_id=submit_id).first()
+    pronunciation = db.query(models.Pronunciation).filter_by(submit_id=submit_id).first()
+
+    if not all([fluency, lexical, pronunciation]):
         raise HTTPException(
             status_code=404,
-            detail="Transcript not found. Run transcript first."
+            detail="Missing fluency / lexical / pronunciation"
         )
 
-    # 3. Compute features (reuse your GET logic internally)
-    fluency = create_fluency_from_display_id(submit_id, db)
-    lexical = create_lexical_from_display_id(submit_id, db)
-    pronunciation = create_pronunciation_from_display_id(submit_id, db)
+    # 3️⃣ Generate feedback
+    parts = []
 
-    # 4. Generate feedback text
-    feedback_text = []
+    parts.append(
+        "Your speech is fluent with minimal pausing."
+        if fluency.pause_ratio < 0.3
+        else "You pause frequently; try to maintain smoother speech flow."
+    )
 
-# --- Fluency (ORM object) ---
-    if fluency.pause_ratio < 0.3:
-        feedback_text.append(
-            "Your speech is fluent with minimal pausing."
-        )
-    else:
-        feedback_text.append(
-            "You pause frequently; try to maintain smoother speech flow."
-        )
+    parts.append(
+        "You demonstrate strong lexical sophistication, especially at higher CEFR levels."
+        if (lexical.B2 + lexical.C1) > 40
+        else "Try to incorporate more advanced vocabulary, particularly at B2–C1 level."
+    )
 
-    # --- Lexical (ORM object) ---
-    if (lexical.B2 + lexical.C1) > 40:
-        feedback_text.append(
-            "You demonstrate strong lexical sophistication, especially at higher CEFR levels."
-        )
-    else:
-        feedback_text.append(
-            "Try to incorporate more advanced vocabulary, particularly at B2–C1 level."
-        )
+    high_pron = pronunciation.score_85_95 + pronunciation.score_95_100
+    parts.append(
+        "Your pronunciation clarity is generally strong."
+        if high_pron > 60
+        else "Some words were pronounced unclearly; focus on articulation and stress patterns."
+    )
 
-    # --- Pronunciation (DICT từ transcript) ---
-    pron = pronunciation.get("pronunciation", {})
+    final_feedback = " ".join(parts)
 
-    high_pron = pron.get("85_95", 0) + pron.get("95_100", 0)
-
-    if high_pron > 60:
-        feedback_text.append("Your pronunciation clarity is generally strong.")
-    else:
-        feedback_text.append(
-            "Some words were pronounced unclearly; focus on articulation and stress patterns."
-        )
-
-    final_feedback = " ".join(feedback_text)
-
-
-    # 5. Save feedback (1 feedback / submit)
-    old = db.query(models.Feedback).filter(
-        models.Feedback.submit_id == submit_id
-    ).first()
+    # 4️⃣ Upsert feedback
+    old = db.query(models.Feedback).filter_by(submit_id=submit_id).first()
     if old:
         db.delete(old)
         db.commit()
 
-    db_feedback = models.Feedback(
+    fb = models.Feedback(
         submit_id=submit_id,
         feedback=final_feedback
     )
-    db.add(db_feedback)
+
+    db.add(fb)
     db.commit()
-    db.refresh(db_feedback)
-    return db_feedback
+    db.refresh(fb)
+
+    return fb
+
+
+
+
 
 
 @app.post(
@@ -1271,6 +1399,41 @@ def generate_feedback_for_all_users(
             results[user_id][idx] = None
 
     return results
+
+
+@app.get(
+    "/feedback/all",
+    response_model=dict[int, dict[int, FeedbackResponse | None]]
+)
+def get_feedback_all(db: Session = Depends(get_db)):
+    submits = (
+        db.query(models.Submit)
+        .order_by(models.Submit.user_id, models.Submit.user_submit_index)
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(404, "No submits found")
+
+    results: dict[int, dict[int, FeedbackResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        idx = submit.user_submit_index
+
+        results.setdefault(user_id, {})
+
+        feedback = (
+            db.query(models.Feedback)
+            .filter(models.Feedback.submit_id == submit.id)
+            .first()
+        )
+
+        # giống GET từng ID → có thì trả, không thì None
+        results[user_id][idx] = feedback
+
+    return results
+
 
 @app.get(
     "/user/{user_id}/submit/{user_submit_index}/feedback",
@@ -1361,7 +1524,6 @@ def get_best_lexical_user(db: Session):
         db.query(
             models.Submit.user_id,
             models.Lexical.mttr,
-            models.Lexical.B2,
             models.Lexical.C1
         )
         .join(
@@ -1369,7 +1531,7 @@ def get_best_lexical_user(db: Session):
             models.Lexical.submit_id == models.Submit.id
         )
         .order_by(
-            (models.Lexical.B2 + models.Lexical.C1).desc(),
+            models.Lexical.C1.desc(),
             models.Lexical.mttr.desc()
         )
         .first()
@@ -1386,7 +1548,6 @@ def best_lexical_user(db: Session = Depends(get_db)):
     return {
         "user_id": result.user_id,
         "mttr": result.mttr,
-        "B2": result.B2,
         "C1": result.C1
     }
 
