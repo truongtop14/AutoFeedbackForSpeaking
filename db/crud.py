@@ -100,17 +100,10 @@ class PronunciationResponse(BaseModel):
         orm_mode = True
 
 # --- FEEDBACK MODELS ---
-class FeedbackCreate(BaseModel):
-    user_id: int
-    submit_id: int
-    feedback: str
-    fluency_id: int
-    lexical_id: int
-    pronunciation_id: int
-
 class FeedbackResponse(BaseModel):
     id: int
     submit_id: int
+    user_id: int
     feedback: str
     
     class Config:
@@ -551,6 +544,94 @@ def create_fluency_from_display_id(
     return fluency
 
 
+@app.post(
+    "/fluency/all",
+    response_model=dict[int, dict[int, FluencyResponse | None]]
+)
+def create_fluency_for_all_users(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found in database"
+        )
+
+    results: dict[int, dict[int, FluencyResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+        submit_id = submit.id
+
+        # init dict cho user
+        if user_id not in results:
+            results[user_id] = {}
+
+        try:
+            # --- Lấy transcript ---
+            transcripts = (
+                db.query(models.Transcript)
+                .filter(models.Transcript.submit_id == submit_id)
+                .order_by(models.Transcript.word_index)
+                .all()
+            )
+
+            if not transcripts:
+                raise ValueError("Transcript not found")
+
+            # Transcript → DataFrame
+            df = pd.DataFrame([
+                {
+                    "word": t.word,
+                    "start": t.start,
+                    "end": t.end,
+                    "probability": t.prob
+                }
+                for t in transcripts
+            ])
+
+            # Compute fluency
+            result = compute_fluency_metrics(df)
+
+            # Upsert fluency
+            db.query(models.Fluency).filter(
+                models.Fluency.submit_id == submit_id
+            ).delete()
+            db.commit()
+
+            fluency = models.Fluency(
+                submit_id=submit_id,
+                speed_rate=result["speech_rate_wps"],
+                pause_ratio=result["ratio_pauses_to_duration"]
+            )
+
+            db.add(fluency)
+            db.commit()
+            db.refresh(fluency)
+
+            results[user_id][submit_index] = fluency
+
+        except Exception as e:
+            print(
+                f"[ERROR] user={user_id} "
+                f"submit={submit_index} → {e}"
+            )
+            results[user_id][submit_index] = None
+
+    return results
+
+
+
 
 @app.get(
     "/user/{user_id}/submit/{user_submit_index}/fluency",
@@ -678,6 +759,83 @@ def create_lexical_from_display_id(
     db.refresh(lexical)
 
     return lexical
+
+@app.post(
+    "/lexical/all",
+    response_model=dict[int, dict[int, LexicalResponse | None]]
+)
+def create_lexical_for_all_users(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(models.Submit.user_id, models.Submit.user_submit_index)
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(404, "No submits found")
+
+    results: dict[int, dict[int, LexicalResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        idx = submit.user_submit_index
+        submit_id = submit.id
+
+        results.setdefault(user_id, {})
+
+        try:
+            transcripts = (
+                db.query(models.Transcript)
+                .filter(models.Transcript.submit_id == submit_id)
+                .order_by(models.Transcript.word_index)
+                .all()
+            )
+
+            if not transcripts:
+                raise ValueError("Transcript not found")
+
+            df = pd.DataFrame([
+                {
+                    "word": t.word,
+                    "probability": t.prob,
+                    "start": t.start,
+                    "end": t.end
+                } for t in transcripts
+            ])
+
+            cefr = compute_lexical_score(df)
+            div = compute_lexical_diversity_metrics(df)
+
+            lexical = (
+                db.query(models.Lexical)
+                .filter(models.Lexical.submit_id == submit_id)
+                .first()
+            )
+
+            if lexical is None:
+                lexical = models.Lexical(submit_id=submit_id)
+                db.add(lexical)
+
+            lexical.ttr = div["TTR"]
+            lexical.mttr = div["MSTTR"]
+            lexical.A1 = cefr["A1"]
+            lexical.A2 = cefr["A2"]
+            lexical.B1 = cefr["B1"]
+            lexical.B2 = cefr["B2"]
+            lexical.C1 = cefr["C1"]
+
+            db.commit()
+            db.refresh(lexical)
+
+            results[user_id][idx] = lexical
+
+        except Exception as e:
+            print(f"[LEXICAL ERROR] user={user_id} submit={idx} → {e}")
+            results[user_id][idx] = None
+
+    return results
 
 
 @app.get(
@@ -808,6 +966,102 @@ def create_pronunciation_from_display_id(
     return pronunciation
 
 
+@app.post(
+    "/pronunciation/all",
+    response_model=dict[int, dict[int, PronunciationResponse | None]]
+)
+def create_pronunciation_for_all_users(
+    db: Session = Depends(get_db)
+):
+    submits = (
+        db.query(models.Submit)
+        .order_by(
+            models.Submit.user_id,
+            models.Submit.user_submit_index
+        )
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(
+            status_code=404,
+            detail="No submits found"
+        )
+
+    results: dict[int, dict[int, PronunciationResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        submit_index = submit.user_submit_index
+        submit_id = submit.id
+
+        results.setdefault(user_id, {})
+
+        try:
+            # 1. Lấy transcript
+            transcripts = (
+                db.query(models.Transcript)
+                .filter(models.Transcript.submit_id == submit_id)
+                .order_by(models.Transcript.word_index)
+                .all()
+            )
+
+            if not transcripts:
+                raise ValueError("Transcript not found")
+
+            # 2. Transcript → DataFrame
+            df = pd.DataFrame([
+                {
+                    "word": t.word,
+                    "probability": t.prob,
+                    "start": t.start,
+                    "end": t.end
+                }
+                for t in transcripts
+            ])
+
+
+            # 3. Compute pronunciation
+            result = compute_pronunciation(df)
+
+            # 🔍 Debug nhanh (có thể comment sau)
+            print("PRON KEYS:", result.keys())
+
+            # 4. Upsert pronunciation
+            pronunciation = (
+                db.query(models.Pronunciation)
+                .filter(models.Pronunciation.submit_id == submit_id)
+                .first()
+            )
+
+            if pronunciation is None:
+                pronunciation = models.Pronunciation(submit_id=submit_id)
+                db.add(pronunciation)
+
+            # 
+            pronunciation.score_0_50   = float(result["0_50%"])
+            pronunciation.score_50_70  = float(result["50_70%"])
+            pronunciation.score_70_85  = float(result["70_85%"])
+            pronunciation.score_85_95  = float(result["85_95%"])
+            pronunciation.score_95_100 = float(result["95_100%"])
+
+            db.commit()
+            db.refresh(pronunciation)
+
+
+            # 5. ORM → Pydantic
+            results[user_id][submit_index] = (PronunciationResponse.from_orm(pronunciation))
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()  # 👈 giúp bạn thấy lỗi thật
+            results[user_id][submit_index] = None
+
+    return results
+
+
+
+
 @app.get(
     "/user/{user_id}/submit/{user_submit_index}/pronunciation"
 )
@@ -936,17 +1190,123 @@ def generate_feedback_from_transcript(
     db.refresh(db_feedback)
     return db_feedback
 
-@app.get(
-    "/submit/{submit_id}/transcript/feedback",
-    response_model=FeedbackResponse
+
+@app.post(
+    "/feedback/all",
+    response_model=dict[int, dict[int, FeedbackResponse | None]]
 )
-def get_feedback_from_transcript(
-    submit_id: int,
+def generate_feedback_for_all_users(
     db: Session = Depends(get_db)
 ):
-    feedback = db.query(models.Feedback).filter(
-        models.Feedback.submit_id == submit_id
-    ).first()
+    submits = (
+        db.query(models.Submit)
+        .order_by(models.Submit.user_id, models.Submit.user_submit_index)
+        .all()
+    )
+
+    if not submits:
+        raise HTTPException(404, "No submits found")
+
+    results: dict[int, dict[int, FeedbackResponse | None]] = {}
+
+    for submit in submits:
+        user_id = submit.user_id
+        idx = submit.user_submit_index
+        submit_id = submit.id
+
+        results.setdefault(user_id, {})
+
+        try:
+            fluency = db.query(models.Fluency).filter_by(submit_id=submit_id).first()
+            lexical = db.query(models.Lexical).filter_by(submit_id=submit_id).first()
+            pron = db.query(models.Pronunciation).filter_by(submit_id=submit_id).first()
+
+            if not all([fluency, lexical, pron]):
+                raise ValueError("Missing component")
+
+            feedback = []
+
+            # Fluency
+            feedback.append(
+                "Your speech is fluent."
+                if fluency.pause_ratio < 0.3
+                else "You pause frequently; try smoother flow."
+            )
+
+            # Lexical
+            feedback.append(
+                "Strong advanced vocabulary usage."
+                if (lexical.B2 + lexical.C1) > 40
+                else "Try using more B2–C1 vocabulary."
+            )
+
+            # Pronunciation
+            high = pron.score_85_95 + pron.score_95_100
+            feedback.append(
+                "Pronunciation clarity is strong."
+                if high > 60
+                else "Focus on clearer articulation."
+            )
+
+            final = " ".join(feedback)
+
+            old = db.query(models.Feedback).filter_by(submit_id=submit_id).first()
+            if old:
+                db.delete(old)
+                db.commit()
+
+            fb = models.Feedback(
+                submit_id=submit_id,
+                feedback=final
+            )
+
+            db.add(fb)
+            db.commit()
+            db.refresh(fb)
+
+            results[user_id][idx] = fb
+
+        except Exception as e:
+            print(f"[FEEDBACK ERROR] user={user_id} submit={idx} → {e}")
+            results[user_id][idx] = None
+
+    return results
+
+@app.get(
+    "/user/{user_id}/submit/{user_submit_index}/feedback",
+    response_model=FeedbackResponse
+)
+def get_feedback_from_display_id(
+    user_id: int,
+    user_submit_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get feedback for a specific submit using display id
+    """
+
+    # 1. Map display_id → submit
+    submit = (
+        db.query(models.Submit)
+        .filter(
+            models.Submit.user_id == user_id,
+            models.Submit.user_submit_index == user_submit_index
+        )
+        .first()
+    )
+
+    if not submit:
+        raise HTTPException(
+            status_code=404,
+            detail="Submit not found for this user"
+        )
+
+    # 2. Get feedback by submit_id
+    feedback = (
+        db.query(models.Feedback)
+        .filter(models.Feedback.submit_id == submit.id)
+        .first()
+    )
 
     if not feedback:
         raise HTTPException(

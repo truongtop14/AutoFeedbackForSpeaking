@@ -6,9 +6,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 CEFR_PATH = DATA_DIR / "oxford_cerf.csv"
 
+
 def clean_word(w):
     """Chuẩn hóa từ: bỏ dấu câu."""
-    return re.sub(r"[^a-zA-Z']", "", w).lower()
+    return re.sub(r"[^a-zA-Z']", "", str(w)).lower()
+
 
 def load_cefr_dict(path: Path):
     df = pd.read_csv(path)
@@ -16,7 +18,6 @@ def load_cefr_dict(path: Path):
     # chuẩn hoá tên cột
     df.columns = [c.lower().strip() for c in df.columns]
 
-    # tự động phát hiện cột
     word_col = None
     level_col = None
 
@@ -39,47 +40,40 @@ def load_cefr_dict(path: Path):
     )
 
 
-def cefr_to_score(level):
-    mapping = {
-        "A1": 1,
-        "A2": 2,
-        "B1": 3,
-        "B2": 4,
-        "C1": 5,
-        "C2": 6,
-    }
-    return mapping.get(level, 0)
+def compute_lexical_score(df: pd.DataFrame):
+    """
+    Compute lexical CEFR distribution from ASR transcript DataFrame
 
-def get_prop(i, result_df):
-    try:
-        return result_df.iloc[i]["proportion"]
-    except (IndexError, KeyError):
-        return 0
+    Required columns:
+        - word
+    """
 
-def compute_lexical_score(file):
-    asr_df = pd.read_csv(file)
+    if df is None or df.empty:
+        raise ValueError("Empty transcript DataFrame")
+
+    if "word" not in df.columns:
+        raise ValueError("DataFrame must contain 'word' column")
 
     cefr_dict = load_cefr_dict(CEFR_PATH)
 
-    words, levels = [], []
+    df = df.copy()
 
-    for w in asr_df["word"]:
-        w_clean = clean_word(w)
-        level = cefr_dict.get(w_clean, "UNK")  # 👈 FIX 1
+    # Clean word & map CEFR
+    df["word_clean"] = df["word"].apply(clean_word)
+    df["cefr_level"] = df["word_clean"].apply(
+        lambda w: cefr_dict.get(w, "UNK")
+    )
 
-        words.append(w_clean)
-        levels.append(level)
-
-    df = asr_df.copy()
-    df["word_clean"] = words
-    df["cefr_level"] = levels
-
-    # 👇 FIX 2: chỉ giữ A1–C1
+    # 👇 chỉ giữ A1–C1
     df = df[df["cefr_level"].isin(["A1", "A2", "B1", "B2", "C1"])]
 
     if df.empty:
         return {
-            "A1": 0, "A2": 0, "B1": 0, "B2": 0, "C1": 0
+            "A1": 0.0,
+            "A2": 0.0,
+            "B1": 0.0,
+            "B2": 0.0,
+            "C1": 0.0,
         }
 
     result_df = (

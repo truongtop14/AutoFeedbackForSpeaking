@@ -12,21 +12,20 @@ def tokenize(words):
     """
     tokens = []
     for w in words:
-        w = w.lower()
+        w = str(w).lower()
         w = re.sub(r"[^a-z']", "", w)  # keep alpha + apostrophe
         if w != "":
             tokens.append(w)
     return tokens
+
 
 # -------------------------------
 # TTR (Type-Token Ratio)
 # -------------------------------
 def compute_ttr(tokens):
     if len(tokens) == 0:
-        return 0
-    types = len(set(tokens))
-    tokens_n = len(tokens)
-    return types / tokens_n
+        return 0.0
+    return len(set(tokens)) / len(tokens)
 
 
 # -------------------------------
@@ -38,28 +37,37 @@ def compute_msttr(tokens, segment_size=50):
 
     ttrs = []
     for i in range(0, len(tokens) - segment_size + 1, segment_size):
-        segment = tokens[i:i+segment_size]
+        segment = tokens[i:i + segment_size]
         ttrs.append(compute_ttr(segment))
 
-    return float(np.mean(ttrs))
+    return float(np.mean(ttrs)) if ttrs else 0.0
+
 
 # ====================================================
-# MAIN WRAPPER (plug into Whisper result)
+# MAIN WRAPPER (DataFrame version)
 # ====================================================
-def compute_lexical_diversity_metrics(file):
+def compute_lexical_diversity_metrics(df: pd.DataFrame):
     """
-    result = Whisper output from model.transcribe(..., word_timestamps=True)
+    Compute lexical diversity metrics from ASR transcript DataFrame
+
+    Required columns:
+        - word
     """
-    df = pd.read_csv(file)
-    raw_words = list(df['word'])
+
+    if df is None or df.empty:
+        raise ValueError("Empty transcript DataFrame")
+
+    if "word" not in df.columns:
+        raise ValueError("DataFrame must contain 'word' column")
+
+    # Extract raw words
+    raw_words = df["word"].astype(str).tolist()
 
     tokens = tokenize(raw_words)
 
     return {
-        "file": file,
         "unique_types": len(set(tokens)),
         "total_tokens": len(tokens),
         "TTR": compute_ttr(tokens),
         "MSTTR": compute_msttr(tokens, segment_size=50),
     }
-    
