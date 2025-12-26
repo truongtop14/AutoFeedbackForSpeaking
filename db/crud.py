@@ -171,7 +171,7 @@ def create_submit_from_local_folder(
         try:
             user_id = extract_user_id(filename)
 
-            # submit thứ mấy của user (KHÔNG động vào submit.id)
+            # submit thứ mấy của user
             user_submit_index = (
                 db.query(func.count(models.Submit.id))
                 .filter(models.Submit.user_id == user_id)
@@ -1143,7 +1143,7 @@ def create_pronunciation_for_all_users(
 
         except Exception as e:
             import traceback
-            traceback.print_exc()  # 👈 giúp bạn thấy lỗi thật
+            traceback.print_exc() 
             results[user_id][submit_index] = None
 
     return results
@@ -1247,7 +1247,7 @@ def create_feedback_from_display_id(
     user_submit_index: int,
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Map display_id → submit
+    # Map display_id → submit
     submit = (
         db.query(models.Submit)
         .filter(
@@ -1262,7 +1262,7 @@ def create_feedback_from_display_id(
 
     submit_id = submit.id
 
-    # 2️⃣ Load prerequisite scores
+    # Load prerequisite scores
     fluency = db.query(models.Fluency).filter_by(submit_id=submit_id).first()
     lexical = db.query(models.Lexical).filter_by(submit_id=submit_id).first()
     pronunciation = db.query(models.Pronunciation).filter_by(submit_id=submit_id).first()
@@ -1273,7 +1273,7 @@ def create_feedback_from_display_id(
             detail="Missing fluency / lexical / pronunciation"
         )
 
-    # 3️⃣ Generate feedback
+    # Generate feedback
     parts = []
 
     parts.append(
@@ -1297,7 +1297,7 @@ def create_feedback_from_display_id(
 
     final_feedback = " ".join(parts)
 
-    # 4️⃣ Upsert feedback
+    # Upsert feedback
     old = db.query(models.Feedback).filter_by(submit_id=submit_id).first()
     if old:
         db.delete(old)
@@ -1523,16 +1523,15 @@ def get_best_lexical_user(db: Session):
     return (
         db.query(
             models.Submit.user_id,
-            models.Lexical.mttr,
-            models.Lexical.C1
+            models.Lexical.B2,
+            models.Lexical.B1
         )
         .join(
             models.Lexical,
             models.Lexical.submit_id == models.Submit.id
         )
         .order_by(
-            models.Lexical.C1.desc(),
-            models.Lexical.mttr.desc()
+            (models.Lexical.B2 + models.Lexical.B1).desc()
         )
         .first()
     )
@@ -1547,8 +1546,8 @@ def best_lexical_user(db: Session = Depends(get_db)):
 
     return {
         "user_id": result.user_id,
-        "mttr": result.mttr,
-        "C1": result.C1
+        "B1": result.B1,
+        "B2": result.B2
     }
 
 
